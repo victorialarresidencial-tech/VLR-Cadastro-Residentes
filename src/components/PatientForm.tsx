@@ -251,17 +251,10 @@ export const PatientForm: React.FC<PatientFormProps> = ({
         criadoEm: new Date().toISOString(),
       };
 
-      if (res.savedInFirestore) {
-        setFeedback({
-          type: 'success',
-          message: 'Paciente cadastrado com sucesso diretamente no banco Firestore da Victoria Lar Residencial!',
-        });
-      } else {
-        setFeedback({
-          type: 'success',
-          message: `Paciente cadastrado com sucesso no sistema! ${res.errorNotice || ''}`,
-        });
-      }
+      setFeedback({
+        type: 'success',
+        message: 'Residente cadastrado com sucesso diretamente no Cloud Firestore da Victoria Lar Residencial!',
+      });
 
       onSuccess(pacienteCompleto);
 
@@ -282,10 +275,10 @@ export const PatientForm: React.FC<PatientFormProps> = ({
       setResponsavelEndereco('');
       setObservacoesGerais('');
       setPreferenciasHabitos('');
-    } catch (err: any) {
+    } catch (err: unknown) {
       setFeedback({
         type: 'error',
-        message: 'Erro ao cadastrar paciente: ' + (err?.message || 'Falha inesperada'),
+        message: err instanceof Error ? err.message : 'Falha ao cadastrar paciente no Firestore.',
       });
     } finally {
       setSaving(false);

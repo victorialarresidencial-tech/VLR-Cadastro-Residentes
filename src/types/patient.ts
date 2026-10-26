@@ -69,5 +69,4 @@ export interface FirebaseConnectionStatus {
   projectId: string;
   databaseId?: string;
   errorMessage?: string;
-  usingLocalStorageFallback: boolean;
 }

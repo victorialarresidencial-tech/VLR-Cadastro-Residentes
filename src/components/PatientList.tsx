@@ -77,11 +77,16 @@ export const PatientList: React.FC<PatientListProps> = ({
   }, [pacientes, searchTerm, selectedGrau, selectedStatus, sortDirection]);
 
   const handleDelete = async (id: string, nome: string) => {
-    if (confirm(`Tem certeza que deseja remover o cadastro de ${nome}?`)) {
+    if (confirm(`Tem certeza que deseja remover permanentemente o cadastro de ${nome} do Cloud Firestore?`)) {
       setDeletingId(id);
-      await excluirPacienteNoFirebase(id);
-      setDeletingId(null);
-      onRefresh();
+      try {
+        await excluirPacienteNoFirebase(id);
+        onRefresh();
+      } catch (err: unknown) {
+        alert(err instanceof Error ? err.message : 'Falha ao excluir residente do Firestore.');
+      } finally {
+        setDeletingId(null);
+      }
     }
   };
 
@@ -332,15 +337,9 @@ export const PatientList: React.FC<PatientListProps> = ({
                             ({paciente.nomeSocial})
                           </span>
                         )}
-                        {paciente.id?.startsWith('local-') ? (
-                          <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-900 border border-amber-300" title="Salvo localmente em modo de teste">
-                            Teste Local
-                          </span>
-                        ) : (
-                          <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-900 border border-emerald-300" title="Sincronizado diretamente no Firestore">
-                            Firestore
-                          </span>
-                        )}
+                        <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-900 border border-emerald-300" title="Registro sincronizado diretamente no Cloud Firestore">
+                          Firestore
+                        </span>
                       </div>
 
                       <div className="flex flex-wrap items-center gap-3 mt-1.5 text-xs text-stone-600">
@@ -469,15 +468,9 @@ export const PatientList: React.FC<PatientListProps> = ({
                       <h4 className="font-serif-brand text-lg font-bold text-stone-900 leading-snug">
                         {paciente.nomeCompleto}
                       </h4>
-                      {paciente.id?.startsWith('local-') ? (
-                        <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-900 border border-amber-300 shrink-0">
-                          Teste Local
-                        </span>
-                      ) : (
-                        <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-900 border border-emerald-300 shrink-0">
-                          Firestore
-                        </span>
-                      )}
+                      <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-900 border border-emerald-300 shrink-0" title="Registro sincronizado diretamente no Cloud Firestore">
+                        Firestore
+                      </span>
                     </div>
                     {paciente.nomeSocial && (
                       <p className="text-xs text-stone-500 italic">

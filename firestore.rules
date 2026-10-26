@@ -1,0 +1,92 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // 1. GLOBAL SAFETY NET: Default deny catch-all
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Helper Primitives
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isEmailVerified() {
+      return isSignedIn() && request.auth.token.email_verified == true;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() > 0 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    // Admin bootstrap and database-backed RBAC
+    function isAdmin() {
+      return isSignedIn() && (
+        request.auth.token.email == 'victorialarresidencial@gmail.com' ||
+        exists(/databases/$(database)/documents/admins/$(request.auth.uid))
+      );
+    }
+
+    function isAuthorizedStaff() {
+      return isAdmin() || (
+        isSignedIn() &&
+        exists(/databases/$(database)/documents/funcionarios/$(request.auth.uid))
+      );
+    }
+
+    // Schema Validation for Resident
+    function isValidPaciente(data) {
+      return data.nomeCompleto is string &&
+             data.nomeCompleto.size() >= 2 &&
+             data.nomeCompleto.size() <= 150 &&
+             data.dataNascimento is string &&
+             data.dataNascimento.size() == 10 &&
+             data.quarto is string &&
+             data.quarto.size() <= 100 &&
+             data.sexo in ['feminino', 'masculino', 'outro'] &&
+             data.status in ['ativo', 'avaliacao', 'temporario', 'alta'] &&
+             data.grauDependencia in ['grau1', 'grau2', 'grau3'] &&
+             data.mobilidade in ['independente', 'bengala_andador', 'cadeira_rodas', 'acamado'] &&
+             data.tipoSanguineo in ['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-', 'desconhecido'] &&
+             data.responsavel is map &&
+             data.responsavel.nome is string &&
+             data.responsavel.nome.size() >= 2 &&
+             data.responsavel.telefonePrincipal is string;
+    }
+
+    // Resident Records Collection: Access strictly confined to authorized personnel
+    match /pacientes/{pacienteId} {
+      allow get, list: if isAuthorizedStaff();
+
+      allow create: if isAuthorizedStaff() &&
+                       isValidId(pacienteId) &&
+                       isValidPaciente(incoming());
+
+      allow update: if isAuthorizedStaff() &&
+                       isValidId(pacienteId) &&
+                       isValidPaciente(incoming());
+
+      allow delete: if isAdmin() && isValidId(pacienteId);
+    }
+
+    // Internal Admins & Funcionários RBAC Directories
+    match /admins/{adminId} {
+      allow read: if isSignedIn();
+      allow write: if isAdmin() && isValidId(adminId);
+    }
+
+    match /funcionarios/{staffId} {
+      allow read: if isAuthorizedStaff();
+      allow write: if isAdmin() && isValidId(staffId);
+    }
+  }
+}
