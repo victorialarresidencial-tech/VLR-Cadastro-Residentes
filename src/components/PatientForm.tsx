@@ -1008,7 +1008,7 @@ export const PatientForm: React.FC<PatientFormProps> = ({
             <span>
               Destino:{' '}
               <strong className="text-stone-700 font-mono">
-                Firestore (cadastro-de-pacientes-be77f / coleção &apos;pacientes&apos;)
+                Firestore (victoria-lar-residencial / coleção &apos;pacientes&apos;)
               </strong>{' '}
               &bull; <span className="text-emerald-700 font-semibold">Zero Storage Local</span>
             </span>
