@@ -1,0 +1,167 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // 1. GLOBAL SAFETY NET: Default deny catch-all
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // =========================================================================
+    // PRIMITIVAS DE IDENTIFICAÇÃO E VALIDAÇÃO GERAL
+    // =========================================================================
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    // Exige autenticação válida com e-mail institucional estritamente verificado
+    function isEmailVerified() {
+      return isSignedIn() && request.auth.token.email_verified == true;
+    }
+
+    // Prevenção contra injeção e IDs maliciosos (máximo 128 caracteres seguros)
+    function isValidId(id) {
+      return id is string && id.size() > 0 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    // =========================================================================
+    // REGRAS DEFINITIVAS DE CONTROLE DE ACESSO RBAC (PROPOSTA CANDIDATA FASE 1.2)
+    // =========================================================================
+
+    // Versão definitiva: isAdmin() baseada EXCLUSIVAMENTE em documento ativo em /admins/{uid}.
+    // Exige:
+    // 1. Autenticação ativa;
+    // 2. Token com email_verified == true;
+    // 3. Documento existente na coleção /admins sob o exato UID do usuário;
+    // 4. Campo 'ativo' existente e com valor booleano estritamente true.
+    // Nenhum bootstrap ou verificação estática por string de e-mail.
+    function isAdmin() {
+      return isEmailVerified() &&
+        exists(/databases/$(database)/documents/admins/$(request.auth.uid)) &&
+        ('ativo' in get(/databases/$(database)/documents/admins/$(request.auth.uid)).data) &&
+        get(/databases/$(database)/documents/admins/$(request.auth.uid)).data.ativo == true;
+    }
+
+    // Funcionário institucional autorizado:
+    // Exige autenticação com e-mail verificado, documento em /funcionarios/{uid} e ativo == true.
+    function isStaffMember() {
+      return isEmailVerified() &&
+        exists(/databases/$(database)/documents/funcionarios/$(request.auth.uid)) &&
+        ('ativo' in get(/databases/$(database)/documents/funcionarios/$(request.auth.uid)).data) &&
+        get(/databases/$(database)/documents/funcionarios/$(request.auth.uid)).data.ativo == true;
+    }
+
+    // Membro autorizado da equipe (Administrador ou Funcionário ativo)
+    function isAuthorizedStaff() {
+      return isAdmin() || isStaffMember();
+    }
+
+    // =========================================================================
+    // VALIDAÇÃO DOS SCHEMAS DAS ENTIDADES INSTITUCIONAIS
+    // =========================================================================
+
+    // Validação de dados de Residentes (Pacientes)
+    function isValidPaciente(data) {
+      return data.nomeCompleto is string &&
+             data.nomeCompleto.size() >= 2 &&
+             data.nomeCompleto.size() <= 150 &&
+             data.dataNascimento is string &&
+             data.dataNascimento.size() == 10 &&
+             data.quarto is string &&
+             data.quarto.size() <= 100 &&
+             data.sexo in ['feminino', 'masculino', 'outro'] &&
+             data.status in ['ativo', 'avaliacao', 'temporario', 'alta'] &&
+             data.grauDependencia in ['grau1', 'grau2', 'grau3'] &&
+             data.mobilidade in ['independente', 'bengala_andador', 'cadeira_rodas', 'acamado'] &&
+             data.tipoSanguineo in ['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-', 'desconhecido'] &&
+             data.responsavel is map &&
+             data.responsavel.nome is string &&
+             data.responsavel.nome.size() >= 2 &&
+             data.responsavel.telefonePrincipal is string;
+    }
+
+    // Validação rigorosa dos campos administrativos (/admins)
+    function isValidAdmin(data) {
+      return data.nome is string &&
+             data.nome.size() >= 2 &&
+             data.nome.size() <= 150 &&
+             data.ativo is bool &&
+             (!('email' in data) || (data.email is string && data.email.size() >= 5 && data.email.size() <= 150)) &&
+             (!('cargo' in data) || (data.cargo is string && data.cargo.size() >= 2 && data.cargo.size() <= 100));
+    }
+
+    // Validação rigorosa dos campos de funcionários (/funcionarios)
+    function isValidFuncionario(data) {
+      return data.nome is string &&
+             data.nome.size() >= 2 &&
+             data.nome.size() <= 150 &&
+             data.ativo is bool &&
+             (!('email' in data) || (data.email is string && data.email.size() >= 5 && data.email.size() <= 150)) &&
+             (!('cargo' in data) || (data.cargo is string && data.cargo.size() >= 2 && data.cargo.size() <= 100));
+    }
+
+    // =========================================================================
+    // COLEÇÃO /pacientes — Prontuários e Cadastros de Residentes
+    // =========================================================================
+    match /pacientes/{pacienteId} {
+      // Leitura e listagem restritas à equipe institucional autorizada
+      allow get, list: if isAuthorizedStaff();
+
+      // Criação e atualização exigem papel institucional autorizado, ID válido e schema estrito
+      allow create: if isAuthorizedStaff() &&
+                       isValidId(pacienteId) &&
+                       isValidPaciente(incoming());
+
+      allow update: if isAuthorizedStaff() &&
+                       isValidId(pacienteId) &&
+                       isValidPaciente(incoming());
+
+      // Exclusão restrita exclusivamente a Administradores com e-mail verificado
+      allow delete: if isAdmin() && isValidId(pacienteId);
+    }
+
+    // =========================================================================
+    // COLEÇÃO /admins — Diretório de Administradores Institucionais
+    // =========================================================================
+    match /admins/{adminId} {
+      // Usuário pode ler o próprio documento administrativo (não concede privilégios automáticos)
+      // Administrador autorizado pode inspecionar documentos individuais de admins
+      allow get: if isSignedIn() && (request.auth.uid == adminId || isAdmin());
+
+      // Apenas administradores autorizados com e-mail verificado podem listar administradores
+      allow list: if isAdmin();
+
+      // Criação, alteração e revogação exigem permissão administrativa e schema estrito
+      // Não permite autoelevação por usuários comuns ou funcionários
+      allow create: if isAdmin() && isValidId(adminId) && isValidAdmin(incoming());
+      allow update: if isAdmin() && isValidId(adminId) && isValidAdmin(incoming());
+      allow delete: if isAdmin() && isValidId(adminId);
+    }
+
+    // =========================================================================
+    // COLEÇÃO /funcionarios — Diretório de Funcionários e Profissionais
+    // =========================================================================
+    match /funcionarios/{staffId} {
+      // Funcionário pode ler seu próprio registro profissional
+      // Administrador autorizado pode inspecionar registros individuais de funcionários
+      allow get: if isSignedIn() && (request.auth.uid == staffId || isAdmin());
+
+      // Apenas administradores autorizados com e-mail verificado podem listar equipe
+      allow list: if isAdmin();
+
+      // Apenas administradores autorizados podem criar, atualizar cargos/status ou remover
+      // Funcionários comuns NÃO podem alterar o próprio cargo nem ativar seus registros
+      allow create: if isAdmin() && isValidId(staffId) && isValidFuncionario(incoming());
+      allow update: if isAdmin() && isValidId(staffId) && isValidFuncionario(incoming());
+      allow delete: if isAdmin() && isValidId(staffId);
+    }
+  }
+}

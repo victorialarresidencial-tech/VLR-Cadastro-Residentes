@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   User,
   Heart,
@@ -14,21 +14,32 @@ import {
   Sparkles,
   Shield,
   Activity,
-  FileText
+  FileText,
+  RotateCcw,
+  LogIn
 } from 'lucide-react';
+import { User as FirebaseUser } from 'firebase/auth';
 import { Paciente, GrauDependencia, StatusPaciente, Sexo, Mobilidade, TipoSanguineo, Medicamento } from '../types/patient';
-import { cadastrarPacienteNoFirebase } from '../lib/firebase';
+import { cadastrarPacienteNoFirebase, atualizarPacienteNoFirebase } from '../lib/firebase';
 
 interface PatientFormProps {
   onSuccess: (pacienteCadastrado: Paciente) => void;
   onOpenConfig: () => void;
   isFirebaseConnected: boolean;
+  currentUser?: FirebaseUser | null;
+  editingPaciente?: Paciente | null;
+  onCancelEdit?: () => void;
+  onLoginGoogle?: () => void;
 }
 
 export const PatientForm: React.FC<PatientFormProps> = ({
   onSuccess,
   onOpenConfig,
   isFirebaseConnected,
+  currentUser,
+  editingPaciente,
+  onCancelEdit,
+  onLoginGoogle,
 }) => {
   // Form State
   const [nomeCompleto, setNomeCompleto] = useState('');
@@ -74,6 +85,45 @@ export const PatientForm: React.FC<PatientFormProps> = ({
 
   const [saving, setSaving] = useState(false);
   const [feedback, setFeedback] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
+
+  // Carregar dados para edição caso editingPaciente seja fornecido
+  useEffect(() => {
+    if (editingPaciente) {
+      setNomeCompleto(editingPaciente.nomeCompleto || '');
+      setNomeSocial(editingPaciente.nomeSocial || '');
+      setDataNascimento(editingPaciente.dataNascimento || '');
+      setCpf(editingPaciente.cpf || '');
+      setRg(editingPaciente.rg || '');
+      setSexo(editingPaciente.sexo || 'feminino');
+      setEstadoCivil(editingPaciente.estadoCivil || 'viuvo');
+      setQuarto(editingPaciente.quarto || '');
+      setDataAdmissao(editingPaciente.dataAdmissao || new Date().toISOString().split('T')[0]);
+      setStatus(editingPaciente.status || 'ativo');
+      setGrauDependencia(editingPaciente.grauDependencia || 'grau1');
+      setMobilidade(editingPaciente.mobilidade || 'independente');
+      setTipoSanguineo(editingPaciente.tipoSanguineo || 'O+');
+      setConvenioMedico(editingPaciente.convenioMedico || '');
+      setNumeroCarteirinha(editingPaciente.numeroCarteirinha || '');
+      setHospitalReferencia(editingPaciente.hospitalReferencia || '');
+      setAlergias(editingPaciente.alergias || []);
+      setDiagnosticos(editingPaciente.diagnosticos || ['Hipertensão']);
+      setMedicamentosContinuos(
+        editingPaciente.medicamentosContinuos && editingPaciente.medicamentosContinuos.length > 0
+          ? editingPaciente.medicamentosContinuos
+          : [{ id: '1', nome: '', dosagem: '', horario: '08:00' }]
+      );
+      setDieta(editingPaciente.dieta || 'Dieta Geral');
+      setResponsavelNome(editingPaciente.responsavel?.nome || '');
+      setResponsavelParentesco(editingPaciente.responsavel?.parentesco || 'Filho(a)');
+      setResponsavelTelefone(editingPaciente.responsavel?.telefonePrincipal || '');
+      setResponsavelTelefoneSec(editingPaciente.responsavel?.telefoneSecundario || '');
+      setResponsavelEmail(editingPaciente.responsavel?.email || '');
+      setResponsavelEndereco(editingPaciente.responsavel?.endereco || '');
+      setObservacoesGerais(editingPaciente.observacoesGerais || '');
+      setPreferenciasHabitos(editingPaciente.preferenciasHabitos || '');
+      setFeedback(null);
+    }
+  }, [editingPaciente]);
 
   // Mask helpers
   const formatCPF = (val: string) => {
@@ -191,6 +241,15 @@ export const PatientForm: React.FC<PatientFormProps> = ({
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
+    if (!currentUser) {
+      setFeedback({
+        type: 'error',
+        message:
+          'Usuário desconectado. Para salvar registros no Cloud Firestore, faça login com uma conta Google autorizada.',
+      });
+      return;
+    }
+
     if (!nomeCompleto.trim()) {
       setFeedback({ type: 'error', message: 'Por favor, preencha o Nome Completo do paciente.' });
       return;
@@ -243,42 +302,62 @@ export const PatientForm: React.FC<PatientFormProps> = ({
     };
 
     try {
-      const res = await cadastrarPacienteNoFirebase(novoPaciente);
+      if (editingPaciente?.id) {
+        // Atualização exclusiva no Firestore
+        await atualizarPacienteNoFirebase(editingPaciente.id, novoPaciente);
 
-      const pacienteCompleto: Paciente = {
-        ...novoPaciente,
-        id: res.id,
-        criadoEm: new Date().toISOString(),
-      };
+        const pacienteAtualizado: Paciente = {
+          ...novoPaciente,
+          id: editingPaciente.id,
+          criadoEm: editingPaciente.criadoEm || new Date().toISOString(),
+          atualizadoEm: new Date().toISOString(),
+        };
 
-      setFeedback({
-        type: 'success',
-        message: 'Residente cadastrado com sucesso diretamente no Cloud Firestore da Victoria Lar Residencial!',
-      });
+        setFeedback({
+          type: 'success',
+          message: `Cadastro de "${pacienteAtualizado.nomeCompleto}" atualizado com sucesso no Cloud Firestore!`,
+        });
 
-      onSuccess(pacienteCompleto);
+        onSuccess(pacienteAtualizado);
+      } else {
+        // Cadastro exclusivo no Firestore
+        const res = await cadastrarPacienteNoFirebase(novoPaciente);
 
-      // Reset form
-      setNomeCompleto('');
-      setNomeSocial('');
-      setDataNascimento('');
-      setCpf('');
-      setRg('');
-      setQuarto('');
-      setAlergias([]);
-      setDiagnosticos(['Hipertensão']);
-      setMedicamentosContinuos([{ id: '1', nome: '', dosagem: '', horario: '08:00' }]);
-      setResponsavelNome('');
-      setResponsavelTelefone('');
-      setResponsavelTelefoneSec('');
-      setResponsavelEmail('');
-      setResponsavelEndereco('');
-      setObservacoesGerais('');
-      setPreferenciasHabitos('');
+        const pacienteCompleto: Paciente = {
+          ...novoPaciente,
+          id: res.id,
+          criadoEm: new Date().toISOString(),
+        };
+
+        setFeedback({
+          type: 'success',
+          message: `Residente "${pacienteCompleto.nomeCompleto}" cadastrado com sucesso diretamente no Cloud Firestore!`,
+        });
+
+        onSuccess(pacienteCompleto);
+
+        // Reset form
+        setNomeCompleto('');
+        setNomeSocial('');
+        setDataNascimento('');
+        setCpf('');
+        setRg('');
+        setQuarto('');
+        setAlergias([]);
+        setDiagnosticos(['Hipertensão']);
+        setMedicamentosContinuos([{ id: '1', nome: '', dosagem: '', horario: '08:00' }]);
+        setResponsavelNome('');
+        setResponsavelTelefone('');
+        setResponsavelTelefoneSec('');
+        setResponsavelEmail('');
+        setResponsavelEndereco('');
+        setObservacoesGerais('');
+        setPreferenciasHabitos('');
+      }
     } catch (err: unknown) {
       setFeedback({
         type: 'error',
-        message: err instanceof Error ? err.message : 'Falha ao cadastrar paciente no Firestore.',
+        message: err instanceof Error ? err.message : 'Falha ao salvar paciente no Firestore.',
       });
     } finally {
       setSaving(false);
@@ -292,26 +371,41 @@ export const PatientForm: React.FC<PatientFormProps> = ({
         <div>
           <div className="flex items-center gap-2 text-[#dfb842] text-xs font-semibold uppercase tracking-widest">
             <Shield className="w-4 h-4" />
-            Victoria Lar Residencial &bull; Admissão de Residentes
+            Victoria Lar Residencial &bull; {editingPaciente ? 'Edição de Prontuário' : 'Admissão de Residentes'}
           </div>
           <h2 className="font-serif-brand text-2xl md:text-3xl font-bold mt-1 tracking-tight">
-            Ficha de Cadastro de Paciente
+            {editingPaciente ? `Editar Cadastro de Residente` : `Ficha de Cadastro de Paciente`}
           </h2>
           <p className="text-xs md:text-sm text-stone-200 mt-1 max-w-xl">
-            Preencha os dados clínicos, pessoais e de contato familiar para alimentar o prontuário digital e a base do Firestore.
+            {editingPaciente
+              ? `Atualizando prontuário clínico e dados cadastrais de ${editingPaciente.nomeCompleto} no Cloud Firestore.`
+              : `Preencha os dados clínicos, pessoais e de contato familiar para alimentar o prontuário digital e a base do Firestore.`}
           </p>
         </div>
 
-        <div className="flex items-center gap-2 self-start md:self-center">
-          <button
-            type="button"
-            onClick={handleFillDemo}
-            className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold text-[#143d30] bg-[#dfb842] hover:bg-[#ebd06b] rounded-lg shadow-sm transition-all"
-            title="Preencher com dados fictícios para testar rapidamente"
-          >
-            <Sparkles className="w-3.5 h-3.5" />
-            Exemplo Rápido
-          </button>
+        <div className="flex flex-wrap items-center gap-2 self-start md:self-center">
+          {editingPaciente && onCancelEdit && (
+            <button
+              type="button"
+              onClick={onCancelEdit}
+              className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold text-stone-200 bg-white/10 hover:bg-white/20 rounded-lg transition-colors cursor-pointer"
+            >
+              <RotateCcw className="w-3.5 h-3.5" />
+              Cancelar Edição
+            </button>
+          )}
+
+          {!editingPaciente && (
+            <button
+              type="button"
+              onClick={handleFillDemo}
+              className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold text-[#143d30] bg-[#dfb842] hover:bg-[#ebd06b] rounded-lg shadow-sm transition-all cursor-pointer"
+              title="Preencher com dados fictícios para testar rapidamente"
+            >
+              <Sparkles className="w-3.5 h-3.5" />
+              Exemplo Rápido
+            </button>
+          )}
         </div>
       </div>
 
@@ -1016,12 +1110,12 @@ export const PatientForm: React.FC<PatientFormProps> = ({
               {saving ? (
                 <>
                   <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                  Cadastrando Paciente...
+                  {editingPaciente ? 'Salvando Alterações...' : 'Cadastrando Paciente...'}
                 </>
               ) : (
                 <>
                   <FileCheck className="w-4 h-4 text-[#dfb842]" />
-                  Finalizar e Salvar Cadastro
+                  {editingPaciente ? 'Salvar Alterações no Firestore' : 'Finalizar e Salvar Cadastro'}
                 </>
               )}
             </button>

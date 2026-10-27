@@ -28,19 +28,31 @@ service cloud.firestore {
       return resource.data;
     }
 
-    // Admin bootstrap and database-backed RBAC
+    // Admin bootstrap e RBAC baseado em documentos de administradores
+    // Somente o email institucional verificado ou documentos explicitamente ativos em /admins
     function isAdmin() {
       return isSignedIn() && (
-        request.auth.token.email == 'victorialarresidencial@gmail.com' ||
-        exists(/databases/$(database)/documents/admins/$(request.auth.uid))
+        (request.auth.token.email == 'victorialarresidencial@gmail.com' && isEmailVerified()) ||
+        (exists(/databases/$(database)/documents/admins/$(request.auth.uid)) &&
+         ('ativo' in get(/databases/$(database)/documents/admins/$(request.auth.uid)).data) &&
+         get(/databases/$(database)/documents/admins/$(request.auth.uid)).data.ativo == true)
       );
     }
 
+    // Funcionário autorizado:
+    // - estar autenticado;
+    // - possuir documento institucional correspondente ao UID autenticado em /funcionarios;
+    // - o campo 'ativo' existir e ser exatamente true;
+    // - não possuir privilégios administrativos indevidos.
+    function isStaffMember() {
+      return isSignedIn() &&
+        exists(/databases/$(database)/documents/funcionarios/$(request.auth.uid)) &&
+        ('ativo' in get(/databases/$(database)/documents/funcionarios/$(request.auth.uid)).data) &&
+        get(/databases/$(database)/documents/funcionarios/$(request.auth.uid)).data.ativo == true;
+    }
+
     function isAuthorizedStaff() {
-      return isAdmin() || (
-        isSignedIn() &&
-        exists(/databases/$(database)/documents/funcionarios/$(request.auth.uid))
-      );
+      return isAdmin() || isStaffMember();
     }
 
     // Schema Validation for Resident
@@ -80,12 +92,14 @@ service cloud.firestore {
 
     // Internal Admins & Funcionários RBAC Directories
     match /admins/{adminId} {
-      allow read: if isSignedIn();
+      allow get: if isSignedIn() && (request.auth.uid == adminId || isAdmin());
+      allow list: if isAdmin();
       allow write: if isAdmin() && isValidId(adminId);
     }
 
     match /funcionarios/{staffId} {
-      allow read: if isAuthorizedStaff();
+      allow get: if isSignedIn() && (request.auth.uid == staffId || isAdmin());
+      allow list: if isAdmin();
       allow write: if isAdmin() && isValidId(staffId);
     }
   }

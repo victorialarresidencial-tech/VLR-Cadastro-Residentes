@@ -16,10 +16,15 @@ import {
   LayoutGrid,
   FileText,
   ShieldAlert,
-  CheckCircle2
+  CheckCircle2,
+  Edit,
+  Lock,
+  LogIn,
+  ExternalLink
 } from 'lucide-react';
+import { User as FirebaseUser } from 'firebase/auth';
 import { Paciente, GrauDependencia, StatusPaciente } from '../types/patient';
-import { excluirPacienteNoFirebase } from '../lib/firebase';
+import { excluirPacienteNoFirebase, DiagnosticResult } from '../lib/firebase';
 
 interface PatientListProps {
   pacientes: Paciente[];
@@ -27,6 +32,10 @@ interface PatientListProps {
   onSelectPaciente: (paciente: Paciente) => void;
   onNewPatientClick: () => void;
   onRefresh: () => void;
+  currentUser?: FirebaseUser | null;
+  onLoginGoogle?: () => void;
+  onEditPaciente?: (paciente: Paciente) => void;
+  diagnostic?: DiagnosticResult | null;
 }
 
 export const PatientList: React.FC<PatientListProps> = ({
@@ -35,6 +44,10 @@ export const PatientList: React.FC<PatientListProps> = ({
   onSelectPaciente,
   onNewPatientClick,
   onRefresh,
+  currentUser,
+  onLoginGoogle,
+  onEditPaciente,
+  diagnostic,
 }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedGrau, setSelectedGrau] = useState<string>('todos');
@@ -272,7 +285,57 @@ export const PatientList: React.FC<PatientListProps> = ({
       </div>
 
       {/* Patient List or Grid Container */}
-      {sortedAndFilteredPacientes.length === 0 ? (
+      {!currentUser ? (
+        <div className="bg-white rounded-2xl border border-stone-200/90 p-8 sm:p-12 text-center space-y-4">
+          <div className="w-16 h-16 rounded-2xl bg-[#dfb842]/20 border border-[#dfb842]/40 text-[#133827] mx-auto flex items-center justify-center">
+            <Lock className="w-8 h-8 text-[#133827]" />
+          </div>
+          <div className="max-w-md mx-auto">
+            <h3 className="font-serif-brand text-xl font-bold text-stone-900">
+              Acesso Restrito ao Prontuário de Residentes
+            </h3>
+            <p className="text-xs sm:text-sm text-stone-600 mt-2 leading-relaxed">
+              O prontuário e cadastro clínico da Victoria Lar Residencial é protegido e exclusivo para a equipe autorizada.
+              Efetue login com sua conta Google institucional para carregar a lista de residentes diretamente do Cloud Firestore.
+            </p>
+          </div>
+          {onLoginGoogle && (
+            <button
+              onClick={onLoginGoogle}
+              className="inline-flex items-center gap-2 px-6 py-3 text-sm font-bold text-[#133827] bg-[#dfb842] hover:bg-[#ebd06b] rounded-xl shadow-sm transition-all cursor-pointer"
+            >
+              <LogIn className="w-4 h-4" />
+              Entrar com Google
+            </button>
+          )}
+        </div>
+      ) : diagnostic?.status === 'autenticado_sem_autorizacao' ? (
+        <div className="bg-white rounded-2xl border border-amber-300 p-8 sm:p-12 text-center space-y-4">
+          <div className="w-16 h-16 rounded-2xl bg-amber-100 text-amber-800 mx-auto flex items-center justify-center">
+            <ShieldAlert className="w-8 h-8" />
+          </div>
+          <div className="max-w-md mx-auto">
+            <h3 className="font-serif-brand text-xl font-bold text-amber-950">
+              Conta Google Não Autorizada
+            </h3>
+            <p className="text-xs sm:text-sm text-amber-900 mt-2 leading-relaxed">
+              A conta <strong className="font-mono">{currentUser.email}</strong> está autenticada, porém não possui autorização cadastrada nas regras do Firestore (coleção &apos;funcionarios&apos; ou &apos;admins&apos;).
+            </p>
+            <p className="text-xs text-stone-500 mt-2">
+              Os dados dos residentes não são exibidos para contas sem permissão explícita. Solicite o cadastro do seu UID à administração da Victoria Lar Residencial.
+            </p>
+          </div>
+          {onLoginGoogle && (
+            <button
+              onClick={onLoginGoogle}
+              className="inline-flex items-center gap-2 px-5 py-2.5 text-xs font-bold text-stone-800 bg-stone-100 hover:bg-stone-200 border border-stone-300 rounded-xl transition-all cursor-pointer"
+            >
+              <LogIn className="w-4 h-4" />
+              Trocar de Conta Google
+            </button>
+          )}
+        </div>
+      ) : sortedAndFilteredPacientes.length === 0 ? (
         <div className="bg-white rounded-2xl border border-stone-200/90 p-12 text-center space-y-4">
           <div className="w-16 h-16 rounded-full bg-stone-100 text-stone-400 mx-auto flex items-center justify-center">
             <User className="w-8 h-8" />
@@ -425,12 +488,23 @@ export const PatientList: React.FC<PatientListProps> = ({
                         <span>Ver Ficha</span>
                       </button>
 
-                      {paciente.id && (
+                      {onEditPaciente && (
+                        <button
+                          onClick={() => onEditPaciente(paciente)}
+                          className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-bold text-[#133827] bg-[#133827]/10 hover:bg-[#133827]/20 rounded-xl transition-colors cursor-pointer"
+                          title="Editar cadastro do residente"
+                        >
+                          <Edit className="w-3.5 h-3.5" />
+                          <span className="hidden sm:inline">Editar</span>
+                        </button>
+                      )}
+
+                      {paciente.id && diagnostic?.canDeleteResidents && (
                         <button
                           onClick={() => handleDelete(paciente.id!, paciente.nomeCompleto)}
                           disabled={deletingId === paciente.id}
                           className="p-2 text-stone-400 hover:text-red-700 hover:bg-red-50 rounded-xl transition-colors cursor-pointer"
-                          title="Excluir cadastro"
+                          title="Excluir cadastro (exclusivo para Administrador)"
                         >
                           <Trash2 className="w-4 h-4" />
                         </button>
@@ -519,21 +593,34 @@ export const PatientList: React.FC<PatientListProps> = ({
                 </div>
 
                 {/* Actions Footer */}
-                <div className="pt-3 border-t border-stone-100 flex items-center justify-between">
-                  <button
-                    onClick={() => onSelectPaciente(paciente)}
-                    className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-[#133827] bg-[#133827]/10 hover:bg-[#133827]/20 rounded-lg transition-colors cursor-pointer"
-                  >
-                    <Eye className="w-3.5 h-3.5" />
-                    Ver Ficha Completa
-                  </button>
+                <div className="pt-3 border-t border-stone-100 flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-1.5">
+                    <button
+                      onClick={() => onSelectPaciente(paciente)}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-[#133827] bg-[#133827]/10 hover:bg-[#133827]/20 rounded-lg transition-colors cursor-pointer"
+                    >
+                      <Eye className="w-3.5 h-3.5" />
+                      Ver Ficha
+                    </button>
 
-                  {paciente.id && (
+                    {onEditPaciente && (
+                      <button
+                        onClick={() => onEditPaciente(paciente)}
+                        className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-bold text-stone-700 bg-stone-100 hover:bg-stone-200 rounded-lg transition-colors cursor-pointer"
+                        title="Editar cadastro"
+                      >
+                        <Edit className="w-3.5 h-3.5" />
+                        Editar
+                      </button>
+                    )}
+                  </div>
+
+                  {paciente.id && diagnostic?.canDeleteResidents && (
                     <button
                       onClick={() => handleDelete(paciente.id!, paciente.nomeCompleto)}
                       disabled={deletingId === paciente.id}
                       className="p-1.5 text-stone-400 hover:text-red-700 hover:bg-red-50 rounded-lg transition-colors cursor-pointer"
-                      title="Excluir cadastro"
+                      title="Excluir cadastro (exclusivo para Administrador)"
                     >
                       <Trash2 className="w-4 h-4" />
                     </button>

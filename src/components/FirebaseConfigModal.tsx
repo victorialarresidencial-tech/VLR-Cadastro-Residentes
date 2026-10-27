@@ -20,6 +20,8 @@ import {
   loginWithGoogle,
   logout,
   TARGET_FIREBASE_PROJECT_ID,
+  ADMIN_BOOTSTRAP_EMAIL,
+  DiagnosticResult,
 } from '../lib/firebase';
 
 interface FirebaseConfigModalProps {
@@ -27,6 +29,7 @@ interface FirebaseConfigModalProps {
   onClose: () => void;
   currentUser: FirebaseUser | null;
   onRefreshData?: () => void;
+  diagnostic?: DiagnosticResult | null;
 }
 
 export const FirebaseConfigModal: React.FC<FirebaseConfigModalProps> = ({
@@ -34,6 +37,7 @@ export const FirebaseConfigModal: React.FC<FirebaseConfigModalProps> = ({
   onClose,
   currentUser,
   onRefreshData,
+  diagnostic,
 }) => {
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState<{
@@ -42,6 +46,7 @@ export const FirebaseConfigModal: React.FC<FirebaseConfigModalProps> = ({
     count?: number;
     projectId: string;
     databaseId: string;
+    diagnostic?: DiagnosticResult;
   } | null>(null);
   const [authLoading, setAuthLoading] = useState(false);
   const [authError, setAuthError] = useState<string | null>(null);
@@ -165,6 +170,20 @@ export const FirebaseConfigModal: React.FC<FirebaseConfigModalProps> = ({
                 <div className="text-sm font-bold text-stone-800">
                   {currentUser ? currentUser.email : 'Nenhum usuário conectado'}
                 </div>
+                {currentUser && (
+                  <div className="text-[11px] text-stone-500 mt-0.5">
+                    Perfil:{' '}
+                    {currentUser.email?.toLowerCase() === ADMIN_BOOTSTRAP_EMAIL.toLowerCase() ? (
+                      <span className="font-semibold text-emerald-800">
+                        Administrador Oficial ({ADMIN_BOOTSTRAP_EMAIL})
+                      </span>
+                    ) : (
+                      <span className="font-semibold text-amber-800">
+                        Funcionário (Verificação via regras do Firestore em /funcionarios)
+                      </span>
+                    )}
+                  </div>
+                )}
               </div>
             </div>
 
@@ -174,7 +193,7 @@ export const FirebaseConfigModal: React.FC<FirebaseConfigModalProps> = ({
                   type="button"
                   onClick={handleLogout}
                   disabled={authLoading}
-                  className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-red-700 hover:text-red-900 bg-red-50 hover:bg-red-100 rounded-lg border border-red-200 transition-colors"
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-red-700 hover:text-red-900 bg-red-50 hover:bg-red-100 rounded-lg border border-red-200 transition-colors cursor-pointer"
                 >
                   <LogOut className="w-3.5 h-3.5" />
                   Desconectar
@@ -184,7 +203,7 @@ export const FirebaseConfigModal: React.FC<FirebaseConfigModalProps> = ({
                   type="button"
                   onClick={handleLogin}
                   disabled={authLoading}
-                  className="inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-bold text-[#143d30] bg-[#dfb842] hover:bg-[#ebd06b] rounded-lg shadow-xs transition-colors"
+                  className="inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-bold text-[#143d30] bg-[#dfb842] hover:bg-[#ebd06b] rounded-lg shadow-xs transition-colors cursor-pointer"
                 >
                   <LogIn className="w-3.5 h-3.5" />
                   {authLoading ? 'Conectando...' : 'Entrar com Google'}
@@ -196,6 +215,34 @@ export const FirebaseConfigModal: React.FC<FirebaseConfigModalProps> = ({
           {authError && (
             <div className="p-3 bg-red-50 border border-red-200 text-red-800 text-xs rounded-lg">
               {authError}
+            </div>
+          )}
+
+          {/* Active Diagnostic Status */}
+          {diagnostic && (
+            <div
+              className={`p-4 rounded-xl border flex items-start gap-3 text-xs leading-relaxed ${
+                diagnostic.status === 'conectado_autorizado'
+                  ? 'bg-emerald-50 border-emerald-300 text-emerald-950'
+                  : diagnostic.status === 'usuario_nao_autenticado'
+                  ? 'bg-stone-50 border-stone-300 text-stone-800'
+                  : 'bg-amber-50 border-amber-300 text-amber-950'
+              }`}
+            >
+              {diagnostic.status === 'conectado_autorizado' ? (
+                <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0 mt-0.5" />
+              ) : diagnostic.status === 'usuario_nao_autenticado' ? (
+                <Lock className="w-5 h-5 text-stone-500 shrink-0 mt-0.5" />
+              ) : (
+                <AlertCircle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
+              )}
+              <div className="space-y-1">
+                <span className="font-bold block text-sm">{diagnostic.title}</span>
+                <p>{diagnostic.description}</p>
+                <p className="font-semibold text-[11px] opacity-90">
+                  Ação recomendada: {diagnostic.recommendation}
+                </p>
+              </div>
             </div>
           )}
 

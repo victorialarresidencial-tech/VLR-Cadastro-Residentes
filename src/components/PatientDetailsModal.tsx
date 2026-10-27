@@ -12,7 +12,8 @@ import {
   Shield,
   Clock,
   Activity,
-  CheckCircle2
+  CheckCircle2,
+  Edit
 } from 'lucide-react';
 import { Paciente } from '../types/patient';
 import { VictoriaLogo } from './VictoriaLogo';
@@ -20,9 +21,14 @@ import { VictoriaLogo } from './VictoriaLogo';
 interface PatientDetailsModalProps {
   paciente: Paciente | null;
   onClose: () => void;
+  onEdit?: (paciente: Paciente) => void;
 }
 
-export const PatientDetailsModal: React.FC<PatientDetailsModalProps> = ({ paciente, onClose }) => {
+export const PatientDetailsModal: React.FC<PatientDetailsModalProps> = ({
+  paciente,
+  onClose,
+  onEdit,
+}) => {
   if (!paciente) return null;
 
   const calculateAge = (birthDate: string): number | null => {
@@ -84,16 +90,26 @@ export const PatientDetailsModal: React.FC<PatientDetailsModalProps> = ({ pacien
           </div>
 
           <div className="flex items-center gap-2">
+            {onEdit && (
+              <button
+                onClick={() => onEdit(paciente)}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white/10 hover:bg-white/20 text-white font-bold text-xs rounded-lg transition-colors cursor-pointer"
+                title="Editar dados cadastrais"
+              >
+                <Edit className="w-3.5 h-3.5 text-[#dfb842]" />
+                Editar Dados
+              </button>
+            )}
             <button
               onClick={handlePrint}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-[#dfb842] hover:bg-[#ebd06b] text-[#143d30] font-bold text-xs rounded-lg transition-colors"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-[#dfb842] hover:bg-[#ebd06b] text-[#143d30] font-bold text-xs rounded-lg transition-colors cursor-pointer"
             >
               <Printer className="w-3.5 h-3.5" />
               Imprimir Ficha
             </button>
             <button
               onClick={onClose}
-              className="p-1.5 text-stone-300 hover:text-white rounded-lg hover:bg-white/10"
+              className="p-1.5 text-stone-300 hover:text-white rounded-lg hover:bg-white/10 cursor-pointer"
             >
               <X className="w-5 h-5" />
             </button>
